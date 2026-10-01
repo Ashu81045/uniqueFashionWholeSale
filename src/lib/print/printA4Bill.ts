@@ -6,7 +6,7 @@ import type { BusinessSettings } from '../../types/settings'
 /**
  * Prints the A4 invoice using the oldest, most standard technique there is:
  * open a plain new browser window containing a hand-written HTML document
- * (no Tailwind, no React, no iframe/blob-URL timing tricks), then call
+ * (no Tailwind, no React, no iframe/blob-URL timing tricks), then call og
  * window.print() on it directly.
  *
  * This replaces both the earlier @media-print-CSS approach (which depended
