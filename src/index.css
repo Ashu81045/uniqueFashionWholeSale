@@ -1,0 +1,189 @@
+@import "tailwindcss";
+
+/*
+ * Brand theme — this REDEFINES Tailwind's default color-scale variables
+ * rather than introducing new token names. That means every existing
+ * `bg-blue-600`, `text-slate-500`, `bg-green-100`, `bg-amber-100`,
+ * `text-red-600`, etc. class already used across the app renders in these
+ * brand colors — nothing elsewhere had to change to pick this up.
+ *
+ * Royal dark + gold theme:
+ *   slate  -> dark neutral, RAMP REVERSED (50=darkest/page-bg ... 900=lightest/heading-text).
+ *             Every existing bg-slate-50 (page bg), bg-slate-100 (surfaces),
+ *             border-slate-200 (borders), text-slate-900 (headings) etc. keeps
+ *             the same *role* it always had — only which hex fills that role
+ *             changed — so no component needed to change its class names.
+ *   blue   -> primary gold accent (buttons, active nav, links, focus rings,
+ *             the net-payable highlight chip). NOT reversed — 50 stays the
+ *             palest tint, 600 the rich mid-tone used for solid buttons.
+ *   green  -> brightened emerald ("paid" status / success), readable as text
+ *             directly on the dark background, not just inside pale chips.
+ *   amber  -> shifted more orange than the gold accent ("partial" status),
+ *             kept deliberately distinct from primary gold.
+ *   red    -> brightened rose ("credit" status / danger).
+ *
+ * Print layouts (components/print/*) are EXCLUDED from this theme on purpose
+ * — they use literal black/white classes, untouched by these token overrides,
+ * because a physical thermal/A4 bill must stay black-on-white regardless of
+ * the on-screen theme.
+ */
+@theme {
+  --font-sans: 'Plus Jakarta Sans', ui-sans-serif, system-ui, sans-serif;
+
+  --color-slate-50: #15101f;
+  --color-slate-100: #1f1832;
+  --color-slate-200: #372c54;
+  --color-slate-300: #4a3c6e;
+  --color-slate-400: #8779ac;
+  --color-slate-500: #ada1cc;
+  --color-slate-600: #c6bce0;
+  --color-slate-700: #dcd4f0;
+  --color-slate-800: #ede7f9;
+  --color-slate-900: #f9f6ff;
+  --color-slate-950: #ffffff;
+
+  --color-blue-50: #fcf6e2;
+  --color-blue-100: #f7eac0;
+  --color-blue-200: #efd888;
+  --color-blue-300: #e5c255;
+  --color-blue-400: #dcb03e;
+  --color-blue-500: #d4af37;
+  --color-blue-600: #c79a2c;
+  --color-blue-700: #a87e20;
+  --color-blue-800: #8a6519;
+  --color-blue-900: #6c4e14;
+  --color-blue-950: #4a350d;
+
+  --color-green-50: #e9fbf2;
+  --color-green-100: #c8f5df;
+  --color-green-200: #96e9c0;
+  --color-green-300: #5fd8a0;
+  --color-green-400: #34c486;
+  --color-green-500: #16a873;
+  --color-green-600: #0e8a5d;
+  --color-green-700: #0a6e4a;
+  --color-green-800: #08573b;
+  --color-green-900: #06432e;
+  --color-green-950: #032a1d;
+
+  --color-amber-50: #fff3e0;
+  --color-amber-100: #ffe0b3;
+  --color-amber-200: #ffc773;
+  --color-amber-300: #ffa83d;
+  --color-amber-400: #fa8c1f;
+  --color-amber-500: #e8740d;
+  --color-amber-600: #c25e08;
+  --color-amber-700: #9c4b08;
+  --color-amber-800: #7a3b08;
+  --color-amber-900: #5c2d07;
+  --color-amber-950: #3a1b03;
+
+  --color-red-50: #feecef;
+  --color-red-100: #fcd2da;
+  --color-red-200: #faa6b8;
+  --color-red-300: #f67792;
+  --color-red-400: #f04d6e;
+  --color-red-500: #e22e52;
+  --color-red-600: #c21d40;
+  --color-red-700: #9e1836;
+  --color-red-800: #7e152d;
+  --color-red-900: #601224;
+  --color-red-950: #380a15;
+
+  --animate-fade-in: fade-in 0.25s ease-out;
+  --animate-scale-in: scale-in 0.2s cubic-bezier(0.16, 1, 0.3, 1);
+  --animate-slide-up: slide-up 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+@keyframes scale-in {
+  from {
+    opacity: 0;
+    transform: scale(0.96);
+  }
+  to {
+    opacity: 1;
+    transform: scale(1);
+  }
+}
+@keyframes slide-up {
+  from {
+    opacity: 0;
+    transform: translateY(16px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+html {
+  /* Tells the browser to use dark-appropriate native chrome (scrollbars,
+     default form-control rendering, autofill hint colors) instead of
+     guessing from OS preference — we only ship a dark theme now. */
+  color-scheme: dark;
+}
+
+body {
+  font-family: var(--font-sans);
+  /* Without an explicit default, unstyled text (notably <input>/<select>
+     elements that don't set their own text-* class) falls back to the
+     browser's initial black, which is invisible on our dark background. */
+  color: var(--color-slate-900);
+}
+
+/* <input>/<select>/<textarea> don't inherit a background from the page by
+   default (browsers give them their own "Field" canvas color), so every
+   unstyled form control renders as a bright box on a dark page unless we
+   set one explicitly here. Individual components can still override with
+   their own bg-* class. */
+input,
+select,
+textarea {
+  background-color: var(--color-slate-100);
+  color: var(--color-slate-900);
+}
+
+/* Chrome/Edge/Safari force their own background (often yellow) on
+   autofilled fields, ignoring normal CSS — this is the standard workaround:
+   an inset box-shadow the size of the field paints over it, and
+   -webkit-text-fill-color overrides the (also forced) text color. */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus {
+  box-shadow: 0 0 0px 1000px var(--color-slate-100) inset;
+  -webkit-text-fill-color: var(--color-slate-900);
+  caret-color: var(--color-slate-900);
+  transition: background-color 9999s ease-in-out 0s;
+}
+
+/* Padding for the fixed mobile bottom nav to clear notched-phone home indicators. */
+.pb-safe {
+  padding-bottom: max(0.5rem, env(safe-area-inset-bottom));
+}
+
+@media print {
+  @page {
+    size: A4;
+    margin: 0;
+  }
+  html, body {
+    margin: 0;
+    padding: 0;
+  }
+  /* BillDetailPage (and anywhere else) marks on-screen-only chrome with
+     this class — nav links, action buttons, the responsive BillPreview
+     card. Without hiding it here, that content still renders during print
+     underneath/alongside PrintRoot's fixed-position A4/thermal layout,
+     which looks like broken or overlapping output on the printed page. */
+  .no-print {
+    display: none !important;
+  }
+}

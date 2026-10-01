@@ -1,0 +1,6 @@
+{
+  "name": "Unique Fashion",
+  "description": "Boutique fashion and tailoring management platform with customer orders, measurements, billing, and inventory tracking.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

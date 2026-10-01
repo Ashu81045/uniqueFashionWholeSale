@@ -1,0 +1,202 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+    function userDoc() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+    }
+    function role() {
+      return userDoc().role;
+    }
+    function isActiveStaff() {
+      return isSignedIn() && userDoc().active == true;
+    }
+    function isAdmin() {
+      return isActiveStaff() && role() == 'admin';
+    }
+
+    // ---- users ----
+    // Staff can read their own doc (role bootstrap on login); admins can
+    // read/write all. The very first admin doc still has to be seeded
+    // manually via the Firebase console (no admin exists yet to authorize
+    // it) — these rules only cover *ongoing* staff management after that.
+    match /users/{uid} {
+      allow read: if isSignedIn() && (request.auth.uid == uid || isAdmin());
+      allow create: if isAdmin()
+                    && request.resource.data.uid == uid
+                    && request.resource.data.keys().hasOnly(['uid', 'name', 'email', 'role', 'active', 'createdAt']);
+      allow update: if isAdmin()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['name', 'email', 'role', 'active']);
+      allow delete: if false;
+    }
+
+    // ---- customers ----
+    match /customers/{customerId} {
+      allow read: if isActiveStaff();
+
+      allow create: if isActiveStaff()
+                    && request.resource.data.mobile == customerId
+                    && request.resource.data.outstandingBalancePaise == 0
+                    && request.resource.data.totalSpentPaise == 0
+                    && request.resource.data.billCount == 0
+                    && request.resource.data.createdByUid == request.auth.uid;
+
+      // Ongoing updates to a customer doc only ever happen as part of the
+      // bill-creation/cancel/edit transaction or a payment-recording write —
+      // constrain to exactly those fields so a client can't rewrite name/mobile
+      // or set an arbitrary balance.
+      allow update: if isActiveStaff()
+                    && request.resource.data.mobile == resource.data.mobile
+                    && request.resource.data.name == resource.data.name
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['outstandingBalancePaise', 'totalSpentPaise', 'billCount', 'lastBillNo', 'lastBillAt']);
+
+      allow delete: if false;
+
+      match /payments/{paymentId} {
+        allow read: if isActiveStaff();
+        allow create: if isActiveStaff()
+                      && request.resource.data.createdByUid == request.auth.uid
+                      && request.resource.data.createdByRole == role();
+        // Append-only ledger: corrections are a new offsetting entry, not an edit.
+        allow update, delete: if false;
+      }
+    }
+
+    // ---- payments (collection group) ----
+    // The nested rule above only authorizes direct reads of one customer's
+    // payments subcollection. A collectionGroup('payments') query — used by
+    // the Collections page, the ledger's "Recent Transactions" feed, and the
+    // collector summary to read across every customer at once — is a
+    // different request type that Firestore only authorizes via a rule
+    // declared with the {path=**} wildcard, hence this separate block.
+    match /{path=**}/payments/{paymentId} {
+      allow read: if isActiveStaff();
+    }
+
+    // ---- bills ----
+    match /bills/{billId} {
+      // Admins see everything; accountants only their own bills (per spec:
+      // "view own bills"). Shop-wide totals for accountants come from the
+      // aggregate-only dailyStats docs, not per-bill reads.
+      allow read: if isActiveStaff()
+                  && (isAdmin() || resource.data.createdByUid == request.auth.uid);
+
+      allow create: if isActiveStaff()
+                    && request.resource.data.createdByUid == request.auth.uid
+                    && request.resource.data.createdByRole == role()
+                    && request.resource.data.status == 'active';
+
+      // Edit/cancel are admin-only per the permission matrix, and only while
+      // the bill is still active (no editing/re-cancelling a cancelled bill).
+      allow update: if isAdmin() && resource.data.status == 'active';
+
+      // Never hard-delete a bill — soft-delete via status:'cancelled' only.
+      allow delete: if false;
+    }
+
+    // ---- dailyStats ----
+    match /dailyStats/{dateId} {
+      allow read: if isActiveStaff();
+
+      allow create: if isActiveStaff()
+                    && request.resource.data.date == dateId
+                    && request.resource.data.billCount == 1;
+
+      // Only allow the exact aggregate fields to change, and only by
+      // increments (billCount must go up by exactly one bill at a time).
+      allow update: if isActiveStaff()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly([
+                           'totalSalesPaise', 'cashCollectedPaise', 'upiCollectedPaise',
+                           'bankTransferCollectedPaise', 'otherCollectedPaise',
+                           'billCount', 'creditAmountPaise', 'lastUpdatedAt'
+                         ]);
+
+      allow delete: if false;
+    }
+
+    // ---- monthlyStats ----
+    // Same aggregate-doc pattern as dailyStats — powers month/year comparisons
+    // via a handful of doc reads instead of reading every daily doc.
+    match /monthlyStats/{monthId} {
+      allow read: if isActiveStaff();
+
+      allow create: if isActiveStaff()
+                    && request.resource.data.month == monthId
+                    && request.resource.data.billCount == 1;
+
+      allow update: if isActiveStaff()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly([
+                           'totalSalesPaise', 'cashCollectedPaise', 'upiCollectedPaise',
+                           'bankTransferCollectedPaise', 'otherCollectedPaise',
+                           'billCount', 'creditAmountPaise', 'lastUpdatedAt'
+                         ]);
+
+      allow delete: if false;
+    }
+
+    // ---- counters ----
+    match /counters/{counterId} {
+      allow read: if isActiveStaff();
+      // Pre-seeded once via the Firebase console; never created by app code.
+      allow create: if false;
+      allow update: if isActiveStaff()
+                    && request.resource.data.currentValue == resource.data.currentValue + 1;
+      allow delete: if false;
+    }
+
+    // ---- globalStats ----
+    // Single doc (outstanding) tracking the sum of every customer's
+    // outstandingBalancePaise, kept in sync via increment() wherever a
+    // customer's balance changes. Self-initializes on first write (no
+    // pre-seed required), unlike counters/dailyStats.
+    match /globalStats/{statId} {
+      allow read: if isActiveStaff();
+      allow create: if isActiveStaff()
+                    && request.resource.data.keys().hasOnly(['totalOutstandingPaise', 'totalRevenuePaise', 'lastUpdatedAt']);
+      allow update: if isActiveStaff()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['totalOutstandingPaise', 'totalRevenuePaise', 'lastUpdatedAt']);
+      allow delete: if false;
+    }
+
+    // ---- productSuggestions ----
+    // Best-effort autocomplete/top-products aggregate, upserted after a bill
+    // saves (not inside the atomic transaction). Same increment-only pattern
+    // as globalStats — never reversed on cancel.
+    match /productSuggestions/{suggestionId} {
+      allow read: if isActiveStaff();
+      allow create: if isActiveStaff()
+                    && request.resource.data.keys().hasOnly(['name', 'nameLower', 'useCount', 'totalQtySold', 'totalRevenuePaise', 'lastUsedAt']);
+      allow update: if isActiveStaff()
+                    && request.resource.data.diff(resource.data).affectedKeys()
+                         .hasOnly(['name', 'nameLower', 'useCount', 'totalQtySold', 'totalRevenuePaise', 'lastUsedAt']);
+      allow delete: if false;
+    }
+
+    // ---- settings ----
+    // Single seeded business-settings doc. Admin can edit via the Settings
+    // page; still never created/deleted by app code (pre-seeded once).
+    match /settings/{settingId} {
+      allow read: if isActiveStaff();
+      allow create: if false;
+      allow update: if isAdmin();
+      allow delete: if false;
+    }
+
+    // ---- dayClosures ----
+    // Register and payments day closure docs keyed by date string (YYYY-MM-DD).
+    match /dayClosures/{dateId} {
+      allow read: if isActiveStaff();
+      allow create, update: if isActiveStaff();
+      allow delete: if isAdmin();
+    }
+  }
+}
